@@ -26,8 +26,13 @@ async function run() {
     const db = client.db("bloodDonationDB");
     const userCollection = db.collection("users");
     const donationCollection = db.collection("donationRequests");
-
-    // --- USER RELATED API ---
+    const blogCollection = db.collection("blogs"); 
+   
+  
+    app.get('/users', async (req, res) => {
+      const result = await userCollection.find().toArray();
+      res.send(result);
+    });
 
     app.post('/users', async (req, res) => {
       const user = req.body;
@@ -46,17 +51,33 @@ async function run() {
       res.send(result);
     });
 
+    app.patch('/users/role/:id', async (req, res) => {
+      const id = req.params.id;
+      const { role } = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = { $set: { role: role } };
+      const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
+    app.patch('/users/status/:id', async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = { $set: { status: status } };
+      const result = await userCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
 
     // --- DONATION REQUESTS API ---
 
-    // ১. নতুন রিকোয়েস্ট তৈরি
     app.post('/donation-requests', async (req, res) => {
       const request = req.body;
       const result = await donationCollection.insertOne(request);
       res.send(result);
     });
 
-    // ২. নির্দিষ্ট ইউজারের সব রিকোয়েস্ট (My Donation Requests পেজের জন্য)
     app.get('/donation-requests/:email', async (req, res) => {
       const email = req.params.email;
       const query = { requesterEmail: email };
@@ -64,7 +85,6 @@ async function run() {
       res.send(result);
     });
 
-    // ৩. ড্যাশবোর্ড হোমের জন্য সর্বশেষ ৩টি রিকোয়েস্ট
     app.get('/donation-requests/recent/:email', async (req, res) => {
       const email = req.params.email;
       const query = { requesterEmail: email };
@@ -72,7 +92,6 @@ async function run() {
       res.send(result);
     });
 
-    // ৪. নির্দিষ্ট একটি রিকোয়েস্ট গেট করা (এডিট পেজে ডাটা দেখানোর জন্য) ✨ (New)
     app.get('/donation-request-details/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -80,7 +99,6 @@ async function run() {
       res.send(result);
     });
 
-    // ৫. রিকোয়েস্ট আপডেট/এডিট করা ✨ (New)
     app.patch('/donation-requests/:id', async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
@@ -100,11 +118,65 @@ async function run() {
       res.send(result);
     });
 
-    // ৬. রিকোয়েস্ট ডিলিট করা
     app.delete('/donation-requests/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await donationCollection.deleteOne(query);
+      res.send(result);
+    });
+
+
+    // --- BLOG RELATED API ---
+
+    app.post('/blogs', async (req, res) => {
+      const blog = req.body;
+      const result = await blogCollection.insertOne(blog);
+      res.send(result);
+    });
+
+    app.get('/blogs', async (req, res) => {
+      const result = await blogCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.patch('/blogs/:id', async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = { $set: { status: status } };
+      const result = await blogCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
+   
+    app.patch('/donation-requests/donate/:id', async (req, res) => {
+      const id = req.params.id;
+      const { donorName, donorEmail, status } = req.body;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          donorName: donorName,
+          donorEmail: donorEmail,
+          donationStatus: status 
+        }
+      };
+      const result = await donationCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    });
+
+
+    // --- SEARCH DONORS API ---
+
+    app.get('/search-donors', async (req, res) => {
+      const { bloodGroup, district, upazila } = req.query;
+      let query = { role: 'donor' };
+
+      
+      if (bloodGroup && bloodGroup !== "") query.bloodGroup = bloodGroup;
+      if (district && district !== "") query.district = district;
+      if (upazila && upazila !== "") query.upazila = upazila;
+
+      const result = await userCollection.find(query).toArray();
       res.send(result);
     });
 
