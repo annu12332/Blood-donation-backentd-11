@@ -172,6 +172,28 @@ async function run() {
 });
 
 
+app.get('/admin-stats', async (req, res) => {
+    try {
+        const usersCount = await userCollection.estimatedDocumentCount();
+        const requestsCount = await donationCollection.estimatedDocumentCount();
+        
+        
+        const successfulDonations = await donationCollection.countDocuments({ 
+            donationStatus: 'done' 
+        });
+
+        res.send({
+            users: usersCount,
+            requests: requestsCount,
+            doneDonations: successfulDonations
+        });
+    } catch (error) {
+        res.status(500).send({ message: "Error fetching stats" });
+    }
+});
+
+
+
     // --- SEARCH DONORS API ---
 
     app.get('/search-donors', async (req, res) => {
