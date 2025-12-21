@@ -170,6 +170,52 @@ app.get('/users/:email', async (req, res) => {
     }
 });
 
+
+// ইউজারের প্রোফাইল আপডেট করার API
+app.put('/user/update/:email', async (req, res) => {
+    const email = req.params.email;
+    const updatedUser = req.body;
+    
+    const filter = { email: email };
+    const updateDoc = {
+        $set: {
+            name: updatedUser.name,
+            avatar: updatedUser.avatar,
+            bloodGroup: updatedUser.bloodGroup,
+            district: updatedUser.district,
+            upazila: updatedUser.upazila,
+        }
+    };
+
+    try {
+        const result = await userCollection.updateOne(filter, updateDoc);
+        if (result.matchedCount > 0) {
+            res.send(result);
+        } else {
+            res.status(404).send({ message: "User not found in database" });
+        }
+    } catch (error) {
+        res.status(500).send({ message: "Internal Server Error", error });
+    }
+});
+
+app.get('/featured-blogs', async (req, res) => {
+    try {
+        
+        const query = { status: 'published' };
+        const result = await blogCollection
+            .find(query)
+            .sort({ _id: -1 }) 
+            .limit(3)
+            .toArray();
+            
+        res.send(result);
+    } catch (error) {
+        res.status(500).send({ message: "Error fetching blogs", error });
+    }
+});
+
+
     // --- Search Donors ---
     app.get('/search-donors', async (req, res) => {
       const { bloodGroup, district, upazila } = req.query;
