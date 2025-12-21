@@ -5,6 +5,7 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const port = process.env.PORT || 5000;
 const app = express();
+const jwt = require('jsonwebtoken');
 
 app.use(cors());
 app.use(express.json());
@@ -213,6 +214,35 @@ app.get('/featured-blogs', async (req, res) => {
     } catch (error) {
         res.status(500).send({ message: "Error fetching blogs", error });
     }
+});
+
+
+
+app.get('/donation-details/:id', async (req, res) => {
+    try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await donationCollection.findOne(query);
+        
+        if (result) {
+            res.send(result);
+        } else {
+            res.status(404).send({ message: "Donation request not found" });
+        }
+    } catch (error) {
+        res.status(500).send({ message: "Invalid ID format", error });
+    }
+});
+
+
+app.patch('/update-request/:id', async (req, res) => {
+    const id = req.params.id;
+    const filter = { _id: new ObjectId(id) };
+    const updatedDoc = {
+        $set: req.body
+    };
+    const result = await donationCollection.updateOne(filter, updatedDoc);
+    res.send(result);
 });
 
 
