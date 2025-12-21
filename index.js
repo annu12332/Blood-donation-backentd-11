@@ -2,10 +2,10 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const jwt = require('jsonwebtoken');
 
 const port = process.env.PORT || 5000;
 const app = express();
-const jwt = require('jsonwebtoken');
 
 app.use(cors());
 app.use(express.json());
@@ -27,8 +27,38 @@ async function run() {
     const donationCollection = db.collection("donationRequests");
     const blogCollection = db.collection("blogs");
 
-    // --- User Related APIs ---
-    app.get('/users', async (req, res) => {
+    app.post('/jwt', async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+      res.send({ token });
+    });
+
+    const verifyToken = (req, res, next) => {
+      if (!req.headers.authorization) {
+        return res.status(401).send({ message: 'unauthorized access' });
+      }
+      const token = req.headers.authorization.split(' ')[1];
+      jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).send({ message: 'unauthorized access' });
+        }
+        req.decoded = decoded;
+        next();
+      });
+    };
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await userCollection.findOne(query);
+      const isAdmin = user?.role === 'admin';
+      if (!isAdmin) {
+        return res.status(403).send({ message: 'forbidden access' });
+      }
+      next();
+    };
+
+    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
     });
@@ -40,7 +70,7 @@ async function run() {
       if (existingUser) {
         return res.status(400).send({ message: 'User already exists', insertedId: null });
       }
-      const result = await userCollection.insertOne(user);
+      const result = await userCollection.insertOne({ ...user, role: 'donor', status: 'active' });
       res.send(result);
     });
 
@@ -50,7 +80,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/users/role/:id', async (req, res) => {
+    app.patch('/users/role/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const { role } = req.body;
       const filter = { _id: new ObjectId(id) };
@@ -59,7 +89,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/users/status/:id', async (req, res) => {
+    app.patch('/users/status/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const { status } = req.body;
       const filter = { _id: new ObjectId(id) };
@@ -68,14 +98,17 @@ async function run() {
       res.send(result);
     });
 
-    // --- Donation Request APIs ---
-    app.post('/donation-requests', async (req, res) => {
+    app.post('/donation-requests', verifyToken, async (req, res) => {
+      const email = req.decoded.email;
+      const user = await userCollection.findOne({ email: email });
+      if (user?.status === 'blocked') {
+        return res.status(403).send({ message: 'Blocked users cannot create requests' });
+      }
       const request = req.body;
       const result = await donationCollection.insertOne(request);
       res.send(result);
     });
 
-    // এই রুটটি আমি শুধু অ্যাড করলাম আপনার ডিটেইলস পেজের জন্য
     app.get('/donation-request-details/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -83,14 +116,14 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/donation-requests/:email', async (req, res) => {
+    app.get('/donation-requests/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
       const query = { requesterEmail: email };
       const result = await donationCollection.find(query).toArray();
       res.send(result);
     });
 
-    app.get('/donation-requests/recent/:email', async (req, res) => {
+    app.get('/donation-requests/recent/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
       const query = { requesterEmail: email };
       const result = await donationCollection.find(query).sort({ _id: -1 }).limit(3).toArray();
@@ -102,7 +135,7 @@ async function run() {
       res.send(result);
     });
 
-    app.patch('/donation-requests/:id', async (req, res) => {
+    app.patch('/donation-requests/:id', verifyToken, async (req, res) => {
       const id = req.params.id;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = { $set: { ...req.body } };
@@ -110,26 +143,32 @@ async function run() {
       res.send(result);
     });
 
-    app.delete('/donation-requests/:id', async (req, res) => {
+    app.delete('/donation-requests/:id', verifyToken, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await donationCollection.deleteOne(query);
       res.send(result);
     });
 
-    // --- BLOG APIs ---
-    app.post('/blogs', async (req, res) => {
+    app.post('/blogs', verifyToken, async (req, res) => {
       const blog = req.body;
       const result = await blogCollection.insertOne(blog);
       res.send(result);
     });
+
+    
+app.post('/payments', verifyToken, async (req, res) => {
+    const payment = req.body;
+    const insertResult = await paymentCollection.insertOne(payment);
+    res.send(insertResult);
+});
 
     app.get('/all-blogs', async (req, res) => {
       const result = await blogCollection.find().toArray();
       res.send(result);
     });
 
-    app.patch('/blogs/:id', async (req, res) => {
+    app.patch('/blogs/:id', verifyToken, async (req, res) => {
       const id = req.params.id;
       const { status } = req.body;
       const filter = { _id: new ObjectId(id) };
@@ -138,115 +177,58 @@ async function run() {
       res.send(result);
     });
 
-    app.delete('/blogs/:id', async (req, res) => {
+    app.delete('/blogs/:id', verifyToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await blogCollection.deleteOne(query);
       res.send(result);
     });
 
-    // --- Admin Stats ---
-    app.get('/admin-stats', async (req, res) => {
+    app.get('/admin-stats', verifyToken, verifyAdmin, async (req, res) => {
       const usersCount = await userCollection.estimatedDocumentCount();
       const requestsCount = await donationCollection.estimatedDocumentCount();
       const successfulDonations = await donationCollection.countDocuments({ status: 'done' });
       res.send({
         users: usersCount,
         requests: requestsCount,
-        doneDonations: successfulDonations
+        doneDonations: successfulDonations,
+        totalFunding: 0
       });
     });
 
-
-   
-app.get('/users/:email', async (req, res) => {
-    const email = req.params.email;
-    const query = { email: email };
-    const result = await userCollection.findOne(query);
-    
-    if (result) {
+    app.get('/users/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const result = await userCollection.findOne({ email: email });
+      if (result) {
         res.send(result);
-    } else {
+      } else {
         res.status(404).send({ message: "User not found" });
-    }
-});
+      }
+    });
 
-
-// ইউজারের প্রোফাইল আপডেট করার API
-app.put('/user/update/:email', async (req, res) => {
-    const email = req.params.email;
-    const updatedUser = req.body;
-    
-    const filter = { email: email };
-    const updateDoc = {
+    app.put('/user/update/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const updatedUser = req.body;
+      const filter = { email: email };
+      const updateDoc = {
         $set: {
-            name: updatedUser.name,
-            avatar: updatedUser.avatar,
-            bloodGroup: updatedUser.bloodGroup,
-            district: updatedUser.district,
-            upazila: updatedUser.upazila,
+          name: updatedUser.name,
+          avatar: updatedUser.avatar,
+          bloodGroup: updatedUser.bloodGroup,
+          district: updatedUser.district,
+          upazila: updatedUser.upazila,
         }
-    };
+      };
+      const result = await userCollection.updateOne(filter, updateDoc);
+      res.send(result);
+    });
 
-    try {
-        const result = await userCollection.updateOne(filter, updateDoc);
-        if (result.matchedCount > 0) {
-            res.send(result);
-        } else {
-            res.status(404).send({ message: "User not found in database" });
-        }
-    } catch (error) {
-        res.status(500).send({ message: "Internal Server Error", error });
-    }
-});
+    app.get('/featured-blogs', async (req, res) => {
+      const query = { status: 'published' };
+      const result = await blogCollection.find(query).sort({ _id: -1 }).limit(3).toArray();
+      res.send(result);
+    });
 
-app.get('/featured-blogs', async (req, res) => {
-    try {
-        
-        const query = { status: 'published' };
-        const result = await blogCollection
-            .find(query)
-            .sort({ _id: -1 }) 
-            .limit(3)
-            .toArray();
-            
-        res.send(result);
-    } catch (error) {
-        res.status(500).send({ message: "Error fetching blogs", error });
-    }
-});
-
-
-
-app.get('/donation-details/:id', async (req, res) => {
-    try {
-        const id = req.params.id;
-        const query = { _id: new ObjectId(id) };
-        const result = await donationCollection.findOne(query);
-        
-        if (result) {
-            res.send(result);
-        } else {
-            res.status(404).send({ message: "Donation request not found" });
-        }
-    } catch (error) {
-        res.status(500).send({ message: "Invalid ID format", error });
-    }
-});
-
-
-app.patch('/update-request/:id', async (req, res) => {
-    const id = req.params.id;
-    const filter = { _id: new ObjectId(id) };
-    const updatedDoc = {
-        $set: req.body
-    };
-    const result = await donationCollection.updateOne(filter, updatedDoc);
-    res.send(result);
-});
-
-
-    // --- Search Donors ---
     app.get('/search-donors', async (req, res) => {
       const { bloodGroup, district, upazila } = req.query;
       let query = { role: 'donor' };
@@ -258,9 +240,9 @@ app.patch('/update-request/:id', async (req, res) => {
     });
 
     await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. Connected to MongoDB!");
+    console.log("Connected to MongoDB!");
   } finally {
-    // Keep connection open
+    
   }
 }
 run().catch(console.dir);
