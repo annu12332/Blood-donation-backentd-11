@@ -156,12 +156,30 @@ async function run() {
       res.send(result);
     });
 
-    
-app.post('/payments', verifyToken, async (req, res) => {
-    const payment = req.body;
-    const insertResult = await paymentCollection.insertOne(payment);
-    res.send(insertResult);
-});
+    app.post('/create-payment-intent', verifyToken, async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: ['card'],
+      });
+
+      res.send({ clientSecret: paymentIntent.client_secret });
+    });
+
+    app.post('/payments', verifyToken, async (req, res) => {
+      const payment = req.body;
+      const result = await paymentCollection.insertOne(payment);
+      res.send(result);
+    });
+
+
+    app.post('/payments', verifyToken, async (req, res) => {
+      const payment = req.body;
+      const insertResult = await paymentCollection.insertOne(payment);
+      res.send(insertResult);
+    });
 
     app.get('/all-blogs', async (req, res) => {
       const result = await blogCollection.find().toArray();
@@ -239,10 +257,23 @@ app.post('/payments', verifyToken, async (req, res) => {
       res.send(result);
     });
 
+
+
+    app.get('/payments/:email', verifyToken, async (req, res) => {
+      const query = { email: req.params.email };
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.get('/all-payments', verifyToken, verifyAdmin, async (req, res) => {
+      const result = await paymentCollection.find().toArray();
+      res.send(result);
+    });
+
     await client.db("admin").command({ ping: 1 });
     console.log("Connected to MongoDB!");
   } finally {
-    
+
   }
 }
 run().catch(console.dir);
