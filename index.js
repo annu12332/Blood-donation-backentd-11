@@ -30,8 +30,7 @@ const verifyToken = (req, res, next) => {
 		next()
 	})
 }
-
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority`
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.buxlnsp.mongodb.net/?retryWrites=true&w=majority`
 const client = new MongoClient(uri, {
 	serverApi: {
 		version: ServerApiVersion.v1,
