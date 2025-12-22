@@ -1,9 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+//require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Stripe initialize
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
 const port = process.env.PORT || 5000;
 const app = express();
@@ -11,8 +11,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const uri = process.env.DB_URI || "mongodb+srv://Assignment-11:zBa83OMG66J7S6Mp@cluster0.buxlnsp.mongodb.net/?appName=Cluster0";
-
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.xxxxx.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
