@@ -13,7 +13,7 @@ try {
     });
   }
 } catch (error) {
-  console.log("Firebase Admin SDK initialization error (Check serviceAccountKey.json):", error.message);
+  console.log("Firebase Admin SDK initialization error:", error.message);
 }
 
 const port = process.env.PORT || 5000
@@ -23,11 +23,13 @@ app.use(
   cors({
     origin: ['http://localhost:5173', 'https://blood-donation-11.netlify.app'],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
   }),
 )
 app.use(express.json())
 
-// --- Middlewares ---
+app.options('*', cors());
+
 const verifyToken = async (req, res, next) => {
   if (!req.headers.authorization) {
     return res.status(401).send({ message: 'unauthorized access' })
@@ -74,7 +76,6 @@ async function run() {
       res.send({ message: 'Using Firebase Token directly' })
     })
 
-    // --- Users Related API ---
     app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
       const result = await userCollection.find().toArray()
       res.send(result)
@@ -119,7 +120,6 @@ async function run() {
       res.send(result)
     })
 
-    // --- Donation Requests API ---
     app.post('/donation-requests', verifyToken, async (req, res) => {
       const email = req.decoded.email
       const user = await userCollection.findOne({ email: email })
@@ -183,7 +183,6 @@ async function run() {
       res.send({ users: usersCount, requests: requestsCount, doneDonations: successfulDonations })
     })
 
-    // --- Blogs Related API ---
     app.post('/blogs', verifyToken, async (req, res) => {
       const blog = req.body
       const result = await blogCollection.insertOne(blog)
@@ -221,7 +220,6 @@ async function run() {
       res.send(result)
     })
 
-    // --- Payment Related API ---
     app.post('/create-payment-intent', verifyToken, async (req, res) => {
       const { price } = req.body
       const amount = parseInt(price * 100)
@@ -250,7 +248,6 @@ async function run() {
       res.send(result)
     })
 
-    // --- Stats and Search ---
     app.get('/admin-stats', verifyToken, verifyAdmin, async (req, res) => {
       const usersCount = await userCollection.estimatedDocumentCount()
       const requestsCount = await donationCollection.estimatedDocumentCount()
@@ -270,7 +267,6 @@ async function run() {
       res.send(result)
     })
 
-    // Profile Update
     app.get('/users/:email', verifyToken, async (req, res) => {
       const email = req.params.email
       const result = await userCollection.findOne({ email: email })
@@ -298,7 +294,6 @@ async function run() {
       res.send(result)
     })
 
-    console.log('Connected to MongoDB and Firebase Ready!')
   } finally {
   }
 }
