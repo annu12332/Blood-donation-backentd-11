@@ -286,6 +286,14 @@ async function run() {
       res.send(result);
     });
 
+    app.use(cors({
+      origin: [
+        'http://localhost:5173',
+        'https://blood-donation-11.netlify.app'
+      ],
+      credentials: true
+    }));
+
     await client.db("admin").command({ ping: 1 });
     console.log("Connected to MongoDB!");
   } finally {
