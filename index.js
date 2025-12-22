@@ -39,8 +39,7 @@ app.use(
 )
 app.use(express.json())
 
-// Error fix for: PathError [TypeError]: Missing parameter name at index 1: *
-app.options('(.*)', cors()); 
+
 
 const verifyToken = async (req, res, next) => {
   if (!req.headers.authorization) {
