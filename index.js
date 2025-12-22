@@ -103,7 +103,6 @@ async function run() {
       res.send(result);
     });
 
-    // Donation Requests Related API
     app.post('/donation-requests', verifyToken, async (req, res) => {
       const email = req.decoded.email;
       const user = await userCollection.findOne({ email: email });
@@ -157,7 +156,6 @@ async function run() {
     });
 
 
-    // public stats for home page
     app.get('/public-stats', async (req, res) => {
       const usersCount = await userCollection.estimatedDocumentCount();
       const requestsCount = await donationCollection.estimatedDocumentCount();
