@@ -3,6 +3,7 @@ const cors = require('cors');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY); // Stripe initialize
 
 const port = process.env.PORT || 5000;
 const app = express();
@@ -26,13 +27,16 @@ async function run() {
     const userCollection = db.collection("users");
     const donationCollection = db.collection("donationRequests");
     const blogCollection = db.collection("blogs");
+    const paymentCollection = db.collection("payments"); // কালেকশন ডিক্লেয়ার করা হলো
 
+    // JWT Related API
     app.post('/jwt', async (req, res) => {
       const user = req.body;
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
       res.send({ token });
     });
 
+    // Middlewares
     const verifyToken = (req, res, next) => {
       if (!req.headers.authorization) {
         return res.status(401).send({ message: 'unauthorized access' });
@@ -58,6 +62,7 @@ async function run() {
       next();
     };
 
+    // Users Related API
     app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
       const result = await userCollection.find().toArray();
       res.send(result);
@@ -98,6 +103,7 @@ async function run() {
       res.send(result);
     });
 
+    // Donation Requests Related API
     app.post('/donation-requests', verifyToken, async (req, res) => {
       const email = req.decoded.email;
       const user = await userCollection.findOne({ email: email });
@@ -150,35 +156,25 @@ async function run() {
       res.send(result);
     });
 
+
+    // public stats for home page
+    app.get('/public-stats', async (req, res) => {
+      const usersCount = await userCollection.estimatedDocumentCount();
+      const requestsCount = await donationCollection.estimatedDocumentCount();
+      const successfulDonations = await donationCollection.countDocuments({ status: 'done' });
+
+      res.send({
+        users: usersCount,
+        requests: requestsCount,
+        doneDonations: successfulDonations
+      });
+    });
+
+    // Blogs Related API
     app.post('/blogs', verifyToken, async (req, res) => {
       const blog = req.body;
       const result = await blogCollection.insertOne(blog);
       res.send(result);
-    });
-
-    app.post('/create-payment-intent', verifyToken, async (req, res) => {
-      const { price } = req.body;
-      const amount = parseInt(price * 100);
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: amount,
-        currency: 'usd',
-        payment_method_types: ['card'],
-      });
-
-      res.send({ clientSecret: paymentIntent.client_secret });
-    });
-
-    app.post('/payments', verifyToken, async (req, res) => {
-      const payment = req.body;
-      const result = await paymentCollection.insertOne(payment);
-      res.send(result);
-    });
-
-
-    app.post('/payments', verifyToken, async (req, res) => {
-      const payment = req.body;
-      const insertResult = await paymentCollection.insertOne(payment);
-      res.send(insertResult);
     });
 
     app.get('/all-blogs', async (req, res) => {
@@ -202,18 +198,69 @@ async function run() {
       res.send(result);
     });
 
+    app.get('/featured-blogs', async (req, res) => {
+      const query = { status: 'published' };
+      const result = await blogCollection.find(query).sort({ _id: -1 }).limit(3).toArray();
+      res.send(result);
+    });
+
+    // Payment Related API
+    app.post('/create-payment-intent', verifyToken, async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: ['card'],
+      });
+      res.send({ clientSecret: paymentIntent.client_secret });
+    });
+
+    app.post('/payments', verifyToken, async (req, res) => {
+      const payment = req.body;
+      const result = await paymentCollection.insertOne(payment);
+      res.send(result);
+    });
+
+    app.get('/payments/:email', verifyToken, async (req, res) => {
+      const query = { email: req.params.email };
+      const result = await paymentCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.get('/all-payments', verifyToken, verifyAdmin, async (req, res) => {
+      const result = await paymentCollection.find().toArray();
+      res.send(result);
+    });
+
+    // Stats and Search
     app.get('/admin-stats', verifyToken, verifyAdmin, async (req, res) => {
       const usersCount = await userCollection.estimatedDocumentCount();
       const requestsCount = await donationCollection.estimatedDocumentCount();
       const successfulDonations = await donationCollection.countDocuments({ status: 'done' });
+
+      const payments = await paymentCollection.find().toArray();
+      const totalFunds = payments.reduce((sum, payment) => sum + (payment.price || 0), 0);
+
       res.send({
         users: usersCount,
         requests: requestsCount,
         doneDonations: successfulDonations,
-        totalFunding: 0
+        totalFunding: totalFunds
       });
     });
 
+    app.get('/donors-search', async (req, res) => {
+      const { bloodGroup, district, upazila } = req.query;
+      let query = { role: 'donor' };
+      if (bloodGroup) query.bloodGroup = bloodGroup;
+      if (district) query.district = district;
+      if (upazila) query.upazila = upazila;
+      const result = await userCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    // Profile Update
     app.get('/users/:email', verifyToken, async (req, res) => {
       const email = req.params.email;
       const result = await userCollection.findOne({ email: email });
@@ -241,39 +288,9 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/featured-blogs', async (req, res) => {
-      const query = { status: 'published' };
-      const result = await blogCollection.find(query).sort({ _id: -1 }).limit(3).toArray();
-      res.send(result);
-    });
-
-    app.get('/search-donors', async (req, res) => {
-      const { bloodGroup, district, upazila } = req.query;
-      let query = { role: 'donor' };
-      if (bloodGroup) query.bloodGroup = bloodGroup;
-      if (district) query.district = district;
-      if (upazila) query.upazila = upazila;
-      const result = await userCollection.find(query).toArray();
-      res.send(result);
-    });
-
-
-
-    app.get('/payments/:email', verifyToken, async (req, res) => {
-      const query = { email: req.params.email };
-      const result = await paymentCollection.find(query).toArray();
-      res.send(result);
-    });
-
-    app.get('/all-payments', verifyToken, verifyAdmin, async (req, res) => {
-      const result = await paymentCollection.find().toArray();
-      res.send(result);
-    });
-
     await client.db("admin").command({ ping: 1 });
     console.log("Connected to MongoDB!");
   } finally {
-
   }
 }
 run().catch(console.dir);
