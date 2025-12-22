@@ -5,15 +5,27 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 const admin = require('firebase-admin') 
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 
+// --- Firebase Admin Initialization Start ---
+const formatPrivateKey = (key) => {
+  if (!key) return undefined;
+  return key.replace(/\\n/g, '\n');
+};
+
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential: admin.credential.cert({
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-      privateKey: process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') : undefined,
-    }),
-  });
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: formatPrivateKey(process.env.FIREBASE_PRIVATE_KEY),
+      }),
+    });
+    console.log("✅ Firebase Admin Initialized");
+  } catch (error) {
+    console.error("❌ Firebase Init Error:", error.message);
+  }
 }
+// --- Firebase Admin Initialization End ---
 
 const port = process.env.PORT || 5000
 const app = express()
@@ -27,7 +39,8 @@ app.use(
 )
 app.use(express.json())
 
-app.options('*', cors());
+// Error fix for: PathError [TypeError]: Missing parameter name at index 1: *
+app.options('(.*)', cors()); 
 
 const verifyToken = async (req, res, next) => {
   if (!req.headers.authorization) {
@@ -54,6 +67,8 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
+    // await client.connect(); // Vercel-এ এটি অপশনাল, তবে লোকাল চেক করতে পারেন
+    
     const db = client.db('bloodDonationDB')
     const userCollection = db.collection('users')
     const donationCollection = db.collection('donationRequests')
@@ -221,7 +236,7 @@ async function run() {
 
     app.post('/create-payment-intent', verifyToken, async (req, res) => {
       const { price } = req.body
-      const amount = parseInt(price * 100)
+      const amount = Math.round(price * 100) // parseInt এর বদলে round নিরাপদ
       const paymentIntent = await stripe.paymentIntents.create({
         amount: amount,
         currency: 'usd',
@@ -293,7 +308,8 @@ async function run() {
       res.send(result)
     })
 
-  } finally {
+  } catch (err) {
+    console.error(err);
   }
 }
 run().catch(console.dir)
@@ -301,6 +317,7 @@ run().catch(console.dir)
 app.get('/', (req, res) => {
   res.send('Blood Donation Server is running')
 })
+
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`)
 })
