@@ -2,15 +2,19 @@ const express = require('express')
 require('dotenv').config()
 const cors = require('cors')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
-const admin = require('firebase-admin') // Firebase SDK
+const admin = require('firebase-admin') 
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
 
-
-const serviceAccount = require('./serviceAccountKey.json');
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
+try {
+  const serviceAccount = require('./serviceAccountKey.json');
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount)
+    });
+  }
+} catch (error) {
+  console.log("Firebase Admin SDK initialization error (Check serviceAccountKey.json):", error.message);
+}
 
 const port = process.env.PORT || 5000
 const app = express()
@@ -23,6 +27,7 @@ app.use(
 )
 app.use(express.json())
 
+// --- Middlewares ---
 const verifyToken = async (req, res, next) => {
   if (!req.headers.authorization) {
     return res.status(401).send({ message: 'unauthorized access' })
@@ -65,6 +70,10 @@ async function run() {
       next()
     }
 
+    app.post('/jwt', async (req, res) => {
+      res.send({ message: 'Using Firebase Token directly' })
+    })
+
     // --- Users Related API ---
     app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
       const result = await userCollection.find().toArray()
@@ -78,7 +87,11 @@ async function run() {
       if (existingUser) {
         return res.status(400).send({ message: 'User already exists', insertedId: null })
       }
-      const result = await userCollection.insertOne({ ...user, role: 'donor', status: 'active' })
+      const result = await userCollection.insertOne({
+        ...user,
+        role: 'donor',
+        status: 'active',
+      })
       res.send(result)
     })
 
@@ -135,7 +148,11 @@ async function run() {
     app.get('/donation-requests/recent/:email', verifyToken, async (req, res) => {
       const email = req.params.email
       const query = { requesterEmail: email }
-      const result = await donationCollection.find(query).sort({ _id: -1 }).limit(3).toArray()
+      const result = await donationCollection
+        .find(query)
+        .sort({ _id: -1 })
+        .limit(3)
+        .toArray()
       res.send(result)
     })
 
@@ -196,7 +213,11 @@ async function run() {
 
     app.get('/featured-blogs', async (req, res) => {
       const query = { status: 'published' }
-      const result = await blogCollection.find(query).sort({ _id: -1 }).limit(3).toArray()
+      const result = await blogCollection
+        .find(query)
+        .sort({ _id: -1 })
+        .limit(3)
+        .toArray()
       res.send(result)
     })
 
@@ -229,7 +250,7 @@ async function run() {
       res.send(result)
     })
 
-    // --- Admin Stats and Search ---
+    // --- Stats and Search ---
     app.get('/admin-stats', verifyToken, verifyAdmin, async (req, res) => {
       const usersCount = await userCollection.estimatedDocumentCount()
       const requestsCount = await donationCollection.estimatedDocumentCount()
@@ -249,10 +270,15 @@ async function run() {
       res.send(result)
     })
 
+    // Profile Update
     app.get('/users/:email', verifyToken, async (req, res) => {
       const email = req.params.email
       const result = await userCollection.findOne({ email: email })
-      result ? res.send(result) : res.status(404).send({ message: 'User not found' })
+      if (result) {
+        res.send(result)
+      } else {
+        res.status(404).send({ message: 'User not found' })
+      }
     })
 
     app.put('/user/update/:email', verifyToken, async (req, res) => {
@@ -272,10 +298,15 @@ async function run() {
       res.send(result)
     })
 
-    console.log('Connected to MongoDB and Firebase Admin initialized!')
-  } finally { }
+    console.log('Connected to MongoDB and Firebase Ready!')
+  } finally {
+  }
 }
 run().catch(console.dir)
 
-app.get('/', (req, res) => { res.send('Blood Donation Server is running') })
-app.listen(port, () => { console.log(`Server is running on port ${port}`) })
+app.get('/', (req, res) => {
+  res.send('Blood Donation Server is running')
+})
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`)
+})
