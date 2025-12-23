@@ -27,7 +27,7 @@ if (!admin.apps.length) {
     });
 }
 
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.mongodb.net/?retryWrites=true&w=majority`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.buxlnsp.mongodb.net/?appName=Cluster0`;
 const client = new MongoClient(uri, {
     serverApi: {
         version: ServerApiVersion.v1,
@@ -45,10 +45,11 @@ async function run() {
         const paymentCollection = db.collection("payments");
 
         const verifyToken = async (req, res, next) => {
-            if (!req.headers.authorization) {
+            const authHeader = req.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
                 return res.status(401).send({ message: 'unauthorized access' });
             }
-            const token = req.headers.authorization.split(' ')[1];
+            const token = authHeader.split(' ')[1];
             try {
                 const decodedUser = await admin.auth().verifyIdToken(token);
                 req.decoded = decodedUser;
@@ -80,7 +81,7 @@ async function run() {
         };
 
         app.post('/jwt', async (req, res) => {
-            res.send({ success: true, message: 'Token logged' });
+            res.send({ success: true });
         });
 
         app.get('/public-stats', async (req, res) => {
@@ -95,10 +96,73 @@ async function run() {
             res.send(result);
         });
 
+        app.get('/pending-donation-requests', async (req, res) => {
+            const result = await donationCollection.find({ status: 'pending' }).toArray();
+            res.send(result);
+        });
+
+        app.get('/all-blogs', async (req, res) => {
+            const result = await blogCollection.find().toArray();
+            res.send(result);
+        });
+
         app.get('/users/role/:email', async (req, res) => {
             const email = req.params.email;
             const user = await userCollection.findOne({ email });
             res.send({ role: user?.role || 'donor' });
+        });
+
+        app.get('/users/:email', verifyToken, async (req, res) => {
+            const result = await userCollection.findOne({ email: req.params.email });
+            res.send(result);
+        });
+
+        app.put('/user/update/:email', verifyToken, async (req, res) => {
+            const filter = { email: req.params.email };
+            const updatedData = req.body;
+            const updateDoc = {
+                $set: {
+                    name: updatedData.name,
+                    image: updatedData.image,
+                    district: updatedData.district,
+                    upazila: updatedData.upazila,
+                    bloodGroup: updatedData.bloodGroup,
+                },
+            };
+            const result = await userCollection.updateOne(filter, updateDoc);
+            res.send(result);
+        });
+
+        app.get('/donation-request-details/:id', verifyToken, async (req, res) => {
+            const query = { _id: new ObjectId(req.params.id) };
+            const result = await donationCollection.findOne(query);
+            res.send(result);
+        });
+
+        app.patch('/donation-requests/:id', verifyToken, async (req, res) => {
+            const filter = { _id: new ObjectId(req.params.id) };
+            const updatedData = req.body;
+            const updateDoc = {
+                $set: {
+                    recipientName: updatedData.recipientName,
+                    district: updatedData.district,
+                    upazila: updatedData.upazila,
+                    hospitalName: updatedData.hospitalName,
+                    fullAddress: updatedData.fullAddress,
+                    donationDate: updatedData.donationDate,
+                    donationTime: updatedData.donationTime,
+                    bloodGroup: updatedData.bloodGroup,
+                    description: updatedData.description,
+                    status: updatedData.status
+                },
+            };
+            const result = await donationCollection.updateOne(filter, updateDoc);
+            res.send(result);
+        });
+
+        app.delete('/donation-requests/:id', verifyToken, async (req, res) => {
+            const result = await donationCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+            res.send(result);
         });
 
         app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
@@ -106,17 +170,27 @@ async function run() {
             res.send(result);
         });
 
+        app.patch('/blogs/:id', verifyToken, verifyAdmin, async (req, res) => {
+            const filter = { _id: new ObjectId(req.params.id) };
+            const updateDoc = { $set: { status: req.body.status } };
+            const result = await blogCollection.updateOne(filter, updateDoc);
+            res.send(result);
+        });
+
+        app.get('/all-payments', verifyToken, verifyAdmin, async (req, res) => {
+            const result = await paymentCollection.find().toArray();
+            res.send(result);
+        });
+
         app.get('/admin-stats', verifyToken, verifyStaff, async (req, res) => {
             const usersCount = await userCollection.estimatedDocumentCount();
             const requestsCount = await donationCollection.estimatedDocumentCount();
             const successfulDonations = await donationCollection.countDocuments({ status: 'done' });
-            
             const stats = {
                 users: usersCount,
                 requests: requestsCount,
                 doneDonations: successfulDonations,
             };
-
             if (req.userRole === 'admin') {
                 const payments = await paymentCollection.find().toArray();
                 stats.totalFunding = payments.reduce((sum, p) => sum + (p.price || 0), 0);
@@ -124,14 +198,13 @@ async function run() {
             res.send(stats);
         });
 
-        app.get('/all-donation-requests', verifyToken, verifyStaff, async (req, res) => {
+        app.get('/all-donation-requests', async (req, res) => {
             const result = await donationCollection.find().toArray();
             res.send(result);
         });
 
         app.post('/donation-requests', verifyToken, async (req, res) => {
-            const email = req.decoded.email;
-            const user = await userCollection.findOne({ email: email });
+            const user = await userCollection.findOne({ email: req.decoded.email });
             if (user?.status === 'blocked') {
                 return res.status(403).send({ message: 'Blocked users cannot create requests' });
             }
@@ -145,14 +218,18 @@ async function run() {
         });
 
         app.patch('/users/role/:id', verifyToken, verifyAdmin, async (req, res) => {
-            const filter = { _id: new ObjectId(req.params.id) };
-            const result = await userCollection.updateOne(filter, { $set: { role: req.body.role } });
+            const result = await userCollection.updateOne(
+                { _id: new ObjectId(req.params.id) },
+                { $set: { role: req.body.role } }
+            );
             res.send(result);
         });
 
         app.patch('/users/status/:id', verifyToken, verifyAdmin, async (req, res) => {
-            const filter = { _id: new ObjectId(req.params.id) };
-            const result = await userCollection.updateOne(filter, { $set: { status: req.body.status } });
+            const result = await userCollection.updateOne(
+                { _id: new ObjectId(req.params.id) },
+                { $set: { status: req.body.status } }
+            );
             res.send(result);
         });
 
@@ -165,10 +242,5 @@ async function run() {
 }
 run().catch(console.dir);
 
-app.get('/', (req, res) => {
-    res.send('Blood Donation Server is running');
-});
-
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-});
+app.get('/', (req, res) => res.send('Blood Donation Server is running'));
+app.listen(port);
