@@ -32,7 +32,7 @@ const app = express()
 
 app.use(
   cors({
-    origin: ['http://localhost:5173', 'https://blood-donation-11.netlify.app'],
+    origin: ['http://localhost:5173', 'https://blood-donation-11.vercel.app'],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
   }),
