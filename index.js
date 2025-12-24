@@ -44,6 +44,7 @@ async function run() {
         const blogCollection = db.collection("blogs");
         const paymentCollection = db.collection("payments");
 
+        // Fixed verifyToken Middleware
         const verifyToken = async (req, res, next) => {
             const authHeader = req.headers.authorization;
             if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -55,6 +56,7 @@ async function run() {
                 req.decoded = decodedUser;
                 next();
             } catch (error) {
+                console.error("Firebase Verify Error:", error.message);
                 return res.status(401).send({ message: 'unauthorized access' });
             }
         };
@@ -80,6 +82,8 @@ async function run() {
             }
         };
 
+        // --- ROUTES ---
+
         app.post('/jwt', async (req, res) => {
             res.send({ success: true });
         });
@@ -98,6 +102,12 @@ async function run() {
 
         app.get('/pending-donation-requests', async (req, res) => {
             const result = await donationCollection.find({ status: 'pending' }).toArray();
+            res.send(result);
+        });
+
+        app.get('/donation-details/:id', verifyToken, async (req, res) => {
+            const query = { _id: new ObjectId(req.params.id) };
+            const result = await donationCollection.findOne(query);
             res.send(result);
         });
 
@@ -133,13 +143,26 @@ async function run() {
             res.send(result);
         });
 
+        // Donation Requests by User Email
+        app.get('/donation-requests/:email', verifyToken, async (req, res) => {
+            const email = req.params.email;
+            // Security check jate nijer data chara onno keu na dekhe
+            if (req.decoded.email !== email) {
+                return res.status(403).send({ message: 'forbidden access' });
+            }
+            const result = await donationCollection.find({ requesterEmail: email }).toArray();
+            res.send(result);
+        });
+
         app.get('/donation-request-details/:id', verifyToken, async (req, res) => {
+            if (!ObjectId.isValid(req.params.id)) return res.status(400).send("Invalid ID");
             const query = { _id: new ObjectId(req.params.id) };
             const result = await donationCollection.findOne(query);
             res.send(result);
         });
 
         app.patch('/donation-requests/:id', verifyToken, async (req, res) => {
+            if (!ObjectId.isValid(req.params.id)) return res.status(400).send("Invalid ID");
             const filter = { _id: new ObjectId(req.params.id) };
             const updatedData = req.body;
             const updateDoc = {
@@ -161,6 +184,7 @@ async function run() {
         });
 
         app.delete('/donation-requests/:id', verifyToken, async (req, res) => {
+            if (!ObjectId.isValid(req.params.id)) return res.status(400).send("Invalid ID");
             const result = await donationCollection.deleteOne({ _id: new ObjectId(req.params.id) });
             res.send(result);
         });
@@ -203,6 +227,16 @@ async function run() {
             res.send(result);
         });
 
+        app.get('/donation-requests/recent/:email', verifyToken, async (req, res) => {
+            const email = req.params.email;
+            const decodedEmail = req.decoded.email;
+            if (email !== decodedEmail) return res.status(403).send({ message: 'forbidden access' });
+
+            const query = { requesterEmail: email };
+            const result = await donationCollection.find(query).sort({ _id: -1 }).limit(3).toArray();
+            res.send(result);
+        });
+
         app.post('/donation-requests', verifyToken, async (req, res) => {
             const user = await userCollection.findOne({ email: req.decoded.email });
             if (user?.status === 'blocked') {
@@ -238,7 +272,7 @@ async function run() {
             res.send(result);
         });
 
-    } finally {}
+    } finally { }
 }
 run().catch(console.dir);
 
